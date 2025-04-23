@@ -1,0 +1,10 @@
+services:
+  python-terminal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chip-8-python
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/code
