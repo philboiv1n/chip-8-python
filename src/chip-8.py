@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.0.2
+# Version 0.0.3
 # -----------------------------------------------
 
 
@@ -21,6 +21,32 @@ SCREEN_Y = 32
 SCREEN_C = "●" # Character
 SCREEN_E = "·" # Empty
 screen = bytearray(SCREEN_X * SCREEN_Y)
+
+
+"""
+FONT
+Store in mem 050-09F (by popular convention) 
+"""
+FONT_START = 0x050
+font_data = bytes([
+    0xF0, 0x90, 0x90, 0x90, 0xF0,  # 0
+    0x20, 0x60, 0x20, 0x20, 0x70,  # 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0,  # 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0,  # 3
+    0x90, 0x90, 0xF0, 0x10, 0x10,  # 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0,  # 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0,  # 6
+    0xF0, 0x10, 0x20, 0x40, 0x40,  # 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0,  # 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0,  # 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90,  # A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0,  # B
+    0xF0, 0x80, 0x80, 0x80, 0xF0,  # C
+    0xE0, 0x90, 0x90, 0x90, 0xE0,  # D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0,  # E
+    0xF0, 0x80, 0xF0, 0x80, 0x80,  # F
+])
+mem[FONT_START : FONT_START + len(font_data)] = font_data
 
 
 """
@@ -147,7 +173,7 @@ def op_add_vx_byte(x, nn):
 
 def op_ld_i_addr(nnn):
     """
-    ANNN – LD I, addr
+    ANNN - LD I, addr
     Set I = NNN.
     """
     regs['I'] = nnn
@@ -155,7 +181,7 @@ def op_ld_i_addr(nnn):
 
 def op_drw_vx_vy_n(x,y,n):
     """
-    DXYN – DRW Vx, Vy, nibble
+    DXYN - DRW Vx, Vy, nibble
     Draw sprite at (Vx, Vy) with height N
     Width of each line is 8 bit.
     set VF = 1 on any pixel collision, else 0.
@@ -187,33 +213,34 @@ def op_drw_vx_vy_n(x,y,n):
 
 if __name__ == "__main__":
 
-    # 0 sprite
-    mem[0x300] = 0xF0
-    mem[0x301] = 0x90
-    mem[0x302] = 0x90
-    mem[0x303] = 0x90
-    mem[0x304] = 0xF0
-
+    # -----------------------------------------------
     # Test program
     program = bytes([
         0x00, 0xE0,     # CLS
         
         # Display 0
-        0xA3, 0x00,     # Set I to 0x300
+        0xA0, 0x50,     # Set I to 0x050
         0x6A, 0x03,     # Set VA (x)
-        0x6B, 0x03,     # Set VB (y)
-        0xDA, 0xBA,     # DRW
+        0x6B, 0xA6,     # Set VB (y)
+        0xDA, 0xB5,     # DRW
 
-        # Display another 0 overlapping
-        0x6A, 0x05,     # Set VA (x)
-        0x6B, 0x05,     # Set VB (y)
-        0xDA, 0xBA,     # DRW
+        # Display 1
+        0xA0, 0x55,     # Set I to 0x050
+        0x6A, 0x08,     # Set VA (x)
+        0xDA, 0xB5,     # DRW
+
+        # Display 2
+        0xA0, 0x5A,     # Set I to 0x050
+        0x6A, 0x0E,     # Set VA (x)
+        0xDA, 0xB5,     # DRW
 
         0xFF, 0xFF,     # HALT
     ])
 
     # Load program at the start address (PC)
     mem[regs['PC']:regs['PC'] + len(program)] = program
+    # -----------------------------------------------
+
 
     # RUN
     while step():
@@ -226,4 +253,3 @@ if __name__ == "__main__":
     print("I =", regs['I'])
     print("VA =", regs['VA'])
     print("VB =", regs['VB'])
-
