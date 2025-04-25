@@ -53,3 +53,4 @@ env.bak/
 venv.bak/xw
 
 .DS_Store
+src/programs
