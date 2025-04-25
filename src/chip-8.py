@@ -1,11 +1,11 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.0.4
+# Version 0.0.5
 # -----------------------------------------------
-#import sys
-import curses
 import time
+import curses
+
 
 """
 MEMORY
@@ -26,11 +26,11 @@ delay_timer = 0
 SCREEN : Creating a bytearray of 2KB (1 byte per pixel) for simplicity.
 Another option was to create a bit-array of 256 bytes (8 pixels / byte)
 """
-SCREEN_X = 64 # Width, col
-SCREEN_Y = 32 # Height, row
+SCREEN_W = 64 # Width, col
+SCREEN_H = 32 # Height, row
 SCREEN_C = "█" # Character when pixel on (1)
 SCREEN_E = " " # Empty when pixel off (0)
-screen = bytearray(SCREEN_X * SCREEN_Y)
+screen = bytearray(SCREEN_W * SCREEN_H)
 
 
 """
@@ -137,18 +137,6 @@ def match_op(op) -> bool:
     return True  
 
 
-# def print_screen():
-#     """
-#     Print screen
-#     """
-#     buf = ['\x1b[H']
-#     for y in range(SCREEN_Y):
-#         row = screen[y * SCREEN_X:(y + 1) * SCREEN_X]
-#         buf.append(''.join(SCREEN_C if pixel else SCREEN_E for pixel in row))
-#     sys.stdout.write('\n'.join(buf))
-#     sys.stdout.flush()
-
-
 def load_rom(path):
     """
     Load .ch8 binary (ROM)
@@ -214,17 +202,17 @@ def op_drw_vx_vy_n(x,y,n):
     Width of each line is 8 bit.
     set VF = 1 on any pixel collision, else 0.
     """
-    x_coord = regs[f"V{x:X}"] & (SCREEN_X - 1)
-    y_coord = regs[f"V{y:X}"] & (SCREEN_Y - 1)
+    x_coord = regs[f"V{x:X}"] & (SCREEN_W - 1)
+    y_coord = regs[f"V{y:X}"] & (SCREEN_H - 1)
     i = regs['I']
     vf = 0
 
     for r in range(n):
         sprite = mem[i + r]
-        py = ((y_coord + r) % SCREEN_Y) * SCREEN_X
+        py = ((y_coord + r) % SCREEN_H) * SCREEN_W
         for b in range(8):
             bit = (sprite >> (7 - b)) & 1
-            px = (x_coord + b) % SCREEN_X
+            px = (x_coord + b) % SCREEN_W
             idx = py + px
             old = screen[idx]
             if old & bit:
@@ -245,8 +233,9 @@ if __name__ == "__main__":
     # LOAD ROM
     # ---------------
     # load_rom("programs/IBM Logo.ch8")
-    # load_rom("programs/1-chip8-logo.ch8")
-    load_rom("programs/test01.ch8")
+    load_rom("programs/1-chip8-logo.ch8")
+    # load_rom("programs/test01.ch8")
+
 
 
     def main(stdscr):
@@ -256,12 +245,12 @@ if __name__ == "__main__":
             step()
             # get terminal size and clip to screen buffer
             height, width = stdscr.getmaxyx()
-            rows_to_draw = min(SCREEN_Y, height)
-            cols_to_draw = min(SCREEN_X, width)
+            rows_to_draw = min(SCREEN_H, height)
+            cols_to_draw = min(SCREEN_W, width)
             stdscr.erase()
             for y in range(rows_to_draw):
                 row_str = ''.join(
-                    SCREEN_C if screen[y * SCREEN_X + x] else SCREEN_E
+                    SCREEN_C if screen[y * SCREEN_W + x] else SCREEN_E
                     for x in range(cols_to_draw)
                 )
                 try:
