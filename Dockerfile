@@ -1,13 +1,15 @@
-# Set base image. Visit https://hub.docker.com/_/python for more options.
 FROM python:3.13-alpine
-
-# Set working directory in the container
 WORKDIR /code
 
-# Copy the dependencies file to the working directory and install
-# Update requirements.txt as needed.
-COPY ./requirements.txt ./
+# Copy and install only the web dependencies
+COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Copy the content of the local src directory to the working directory
-COPY ./src ./src
+# Copy your app and static assets
+COPY . .
+
+# Expose the FastAPI port
+EXPOSE 8000
+
+# Launch Uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

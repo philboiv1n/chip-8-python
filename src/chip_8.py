@@ -1,10 +1,8 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.0.5
+# Version 0.0.6
 # -----------------------------------------------
-import time
-import curses
 
 
 """
@@ -12,14 +10,15 @@ MEMORY
 This sets the total addressable memory (RAM) to 4 KiB.
 Stack is a list of 16 possible 16-bit return addresses.
 The stack pointer (sp) point to the next available free slot.
-Sound and Delay timers are declared here.
+Sound (st) and Delay (dt) timers are declared here.
 """
 MEM_SIZE = 0x1000
 mem = bytearray(MEM_SIZE)
 stack = [0] * 16
-sp = 0
-sound_timer = 0
-delay_timer = 0
+sp = 0  # Stack pointer
+st = 0  # Sound Timer
+dt = 0  # Delay Timer
+
 
 
 """
@@ -28,9 +27,16 @@ Another option was to create a bit-array of 256 bytes (8 pixels / byte)
 """
 SCREEN_W = 64 # Width, col
 SCREEN_H = 32 # Height, row
-SCREEN_C = "█" # Character when pixel on (1)
-SCREEN_E = " " # Empty when pixel off (0)
 screen = bytearray(SCREEN_W * SCREEN_H)
+
+
+
+"""
+KEYPAD
+Keypad state for 16 keys (False=up, True=down)
+"""
+keypad = [False] * 16
+
 
 
 """
@@ -220,44 +226,3 @@ def op_drw_vx_vy_n(x,y,n):
             screen[idx] = old ^ bit
 
     regs['VF'] = vf
-
-
-# -----------------------------------------------
-# PROGRAM
-# Load program into memory at 0x200
-# -----------------------------------------------
-
-if __name__ == "__main__":
-
-    # ---------------
-    # LOAD ROM
-    # ---------------
-    # load_rom("programs/IBM Logo.ch8")
-    load_rom("programs/1-chip8-logo.ch8")
-    # load_rom("programs/test01.ch8")
-
-
-
-    def main(stdscr):
-        curses.curs_set(0)       # hide cursor
-        stdscr.nodelay(True)     # make getch() non-blocking
-        while True:
-            step()
-            # get terminal size and clip to screen buffer
-            height, width = stdscr.getmaxyx()
-            rows_to_draw = min(SCREEN_H, height)
-            cols_to_draw = min(SCREEN_W, width)
-            stdscr.erase()
-            for y in range(rows_to_draw):
-                row_str = ''.join(
-                    SCREEN_C if screen[y * SCREEN_W + x] else SCREEN_E
-                    for x in range(cols_to_draw)
-                )
-                try:
-                    stdscr.addnstr(y, 0, row_str, cols_to_draw)
-                except curses.error:
-                    pass
-            stdscr.refresh()
-            time.sleep(1/60)
-    curses.wrapper(main)
-        

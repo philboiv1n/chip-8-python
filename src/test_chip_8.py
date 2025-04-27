@@ -5,7 +5,7 @@ import pytest
 # Dynamically load the chip-8 module from chip-8.py
 spec = importlib.util.spec_from_file_location(
     "chip8",
-    os.path.join(os.path.dirname(__file__), "chip-8.py")
+    os.path.join(os.path.dirname(__file__), "chip_8.py")
 )
 chip8 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(chip8)
@@ -17,7 +17,7 @@ def setup_function(function):
     # Clear memory
     chip8.mem[:] = bytearray(chip8.MEM_SIZE)
     # Clear display
-    chip8.screen[:] = bytearray(chip8.SCREEN_X * chip8.SCREEN_Y)
+    chip8.screen[:] = bytearray(chip8.SCREEN_W * chip8.SCREEN_H)
     # Reset registers
     for key in list(chip8.regs.keys()):
         if key.startswith('V'):
@@ -87,8 +87,8 @@ def test_draw_sprite_no_collision():
     chip8.regs['V1'] = 3
     chip8.op_drw_vx_vy_n(0, 1, 1)
     assert chip8.regs['VF'] == 0
-    idx1 = 3 * chip8.SCREEN_X + 2
-    idx2 = 3 * chip8.SCREEN_X + 9
+    idx1 = 3 * chip8.SCREEN_W + 2
+    idx2 = 3 * chip8.SCREEN_W + 9
     assert chip8.screen[idx1] == 1
     assert chip8.screen[idx2] == 1
 
@@ -102,5 +102,5 @@ def test_draw_sprite_with_collision():
     assert chip8.regs['VF'] == 0
     chip8.op_drw_vx_vy_n(2, 3, 1)
     assert chip8.regs['VF'] == 1
-    idx = 5 * chip8.SCREEN_X + 5
+    idx = 5 * chip8.SCREEN_W + 5
     assert chip8.screen[idx] == 0

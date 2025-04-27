@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" href="data:,">
+  <title>CHIP-8 Python Emulator | Phil Boivin</title>
+  <style>
+    body { background: #000; margin:0; display:flex; align-items:center; justify-content:center; height:100vh; }
+    canvas { image-rendering: pixelated; border: 2px solid #555; }
+  </style>
+</head>
+<body>
+  <div style="position:absolute; top:10px; left:10px; z-index:10; color:#fff;">
+    <input type="file" id="romInput" accept=".ch8" />
+    <button id="loadBtn">Load ROM</button>
+    <span id="status"></span>
+  </div>
+  <canvas id="screen" width="64" height="32"></canvas>
+  <script>
+    const canvas = document.getElementById("screen");
+    const ctx = canvas.getContext("2d");
+    const imageData = ctx.createImageData(64, 32);
+
+    // Upscale for visibility
+    const SCALE = 10;
+    canvas.style.width  = 64 * SCALE + "px";
+    canvas.style.height = 32 * SCALE + "px";
+
+    // Map PC keys to CHIP-8 keypad
+    const keymap = {
+      Digit1: 0x1, Digit2: 0x2, Digit3: 0x3, Digit4: 0xC,
+      KeyQ:    0x4, KeyW:    0x5, KeyE:    0x6, KeyR:    0xD,
+      KeyA:    0x7, KeyS:    0x8, KeyD:    0x9, KeyF:    0xE,
+      KeyZ:    0xA, KeyX:    0x0, KeyC:    0xB, KeyV:    0xF
+    };
+
+    function startEmulator() {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => console.log("WebSocket connected");
+      ws.onclose = () => console.log("WebSocket closed");
+      ws.onerror = e => console.error("WebSocket error", e);
+
+      ws.onmessage = event => {
+        const buf = new Uint8Array(event.data);
+        // buf.length should be 2048 (64×32)
+        for (let i = 0; i < buf.length; i++) {
+          const v   = buf[i] ? 255 : 0;
+          const off = i * 4;
+          imageData.data[off + 0] = v;
+          imageData.data[off + 1] = v;
+          imageData.data[off + 2] = v;
+          imageData.data[off + 3] = 255;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      };
+
+      window.addEventListener("keydown", e => {
+        const k = keymap[e.code];
+        if (k !== undefined) ws.send(JSON.stringify({ type:"keydown", key:k }));
+      });
+      window.addEventListener("keyup", e => {
+        const k = keymap[e.code];
+        if (k !== undefined) ws.send(JSON.stringify({ type:"keyup",   key:k }));
+      });
+    }
+
+    document.getElementById("loadBtn").onclick = async () => {
+      const input = document.getElementById("romInput");
+      if (!input.files.length) {
+        alert("Please select a .ch8 file");
+        return;
+      }
+      const file = input.files[0];
+      document.getElementById("status").textContent = "Uploading...";
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/load", { method: "POST", body: form });
+      if (res.ok) {
+        document.getElementById("status").textContent = "Loaded!";
+        startEmulator();
+        document.getElementById("loadBtn").disabled = true;
+      } else {
+        const err = await res.json();
+        document.getElementById("status").textContent = "Error: " + err.detail;
+      }
+    };
+  </script>
+</body>
+</html>
