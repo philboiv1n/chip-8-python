@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.0.6
+# Version 0.0.7
 # -----------------------------------------------
 
 
@@ -130,8 +130,18 @@ def match_op(op) -> bool:
         case 0:
             if op == 0x00E0:
                 op_disp_clear()
+            elif op == 0x00EE:
+                op_ret_from_subroutine()
         case 1:
             op_jump_to_addr(nnn)
+        case 2:
+            op_call_addr(nnn)
+        case 3:
+            op_se_vx_byte(n2,nn)
+        case 4:
+            op_sne_vx_byte(n2,nn)
+        case 5:
+            op_se_vx_vy(n2,n3)
         case 6:
             op_ld_vx_byte(n2, nn)
         case 7:
@@ -163,22 +173,89 @@ def load_rom(path):
 
 def op_disp_clear(): 
     """
-    00E0 Clear the display (CLS)
+    00E0 
+    Clear the display (CLS)
     """
     screen[:] = bytearray(len(screen))
 
 
+def op_ret_from_subroutine():
+    """
+    00EE
+    Return from a subroutine (pop the address from the stack).
+    Subtracts 1 from the stack pointer, then set the PC 
+    to the address at the top of the stack. 
+    """
+    global sp
+    if sp == 0:
+        raise RuntimeError("Stack underflow on RET")
+    sp -= 1
+    regs['PC'] = stack[sp]  
+
+
 def op_jump_to_addr(nnn):
     """
-    1NNN Jump to address NNN.
+    1nnn 
+    Jump to address nnn.
     """
     regs['PC'] = nnn & 0xFFF
 
 
+def op_call_addr(nnn):
+    """
+    2nnn 
+    Call subroutine at nnn.
+    Puts the current PC on the top of the stack,
+    increments the stack pointer,
+    Set PC to nnn.
+    """
+    global sp
+    if sp >= len(stack):
+        raise RuntimeError("Stack overflow on CALL")
+    stack[sp] = regs['PC']
+    sp += 1
+    regs['PC'] = nnn & 0xFFF
+
+
+def op_se_vx_byte(x, nn): 
+    """
+    3xnn
+    SE Vx, byte
+    Skip the next instruction if Vx == nn.
+    """
+    reg = f"V{x:X}"
+    if regs[reg] == nn:
+        regs['PC'] = (regs['PC'] + 2) & 0xFFFF
+  
+
+def op_sne_vx_byte(x, nn): 
+    """
+    4xnn
+    SNE Vx, byte
+    Skip the next instruction if Vx != nn.
+    """
+    reg = f"V{x:X}"
+    if regs[reg] != nn:
+        regs['PC'] = (regs['PC'] + 2) & 0xFFFF
+
+
+def op_se_vx_vy(x, y): 
+    """
+    5xy0
+    SE Vx, Vy
+    Skip next instruction if Vx == Vy
+    """
+    vx = f"V{x:X}"
+    vy = f"V{y:X}"
+    if regs[vx] == regs[vy]:
+        regs['PC'] = (regs['PC'] + 2) & 0xFFFF
+  
+
 def op_ld_vx_byte(x, nn): 
     """
-    6XNN LD Vx, byte
-    Set Vx = NN.
+    6xnn 
+    LD Vx, byte
+    Set Vx = nn.
     """
     reg = f"V{x:X}"
     regs[reg] = nn & 0xFF
@@ -186,8 +263,8 @@ def op_ld_vx_byte(x, nn):
 
 def op_add_vx_byte(x, nn): 
     """
-    7XNN ADD Vx, byte
-    Set Vx = Vx + NN (no carry flag).
+    7xnn ADD Vx, byte
+    Set Vx = Vx + nn (no carry flag).
     """
     reg = f"V{x:X}"
     regs[reg] = (regs[reg] + nn) & 0xFF
@@ -195,15 +272,15 @@ def op_add_vx_byte(x, nn):
 
 def op_ld_i_addr(nnn):
     """
-    ANNN - LD I, addr
-    Set I = NNN.
+    Annn - LD I, addr
+    Set I to nnn.
     """
     regs['I'] = nnn
 
 
 def op_drw_vx_vy_n(x,y,n):
     """
-    DXYN - DRW Vx, Vy, nibble
+    Dxyn - DRW Vx, Vy, nibble
     Draw sprite at (Vx, Vy) with height N
     Width of each line is 8 bit.
     set VF = 1 on any pixel collision, else 0.

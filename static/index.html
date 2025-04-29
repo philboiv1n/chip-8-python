@@ -5,17 +5,24 @@
   <link rel="icon" href="data:,">
   <title>CHIP-8 Python Emulator | Phil Boivin</title>
   <style>
-    body { background: #000; margin:0; display:flex; align-items:center; justify-content:center; height:100vh; }
-    canvas { image-rendering: pixelated; border: 2px solid #555; }
+    html, body {font-family: Arial, Helvetica, sans-serif; height: 100%; margin: 0;}
+    body {display: flex; justify-content: center; align-items: center; background-color: #eee;}
+    h1 {font-family: 'Courier New', Courier, monospace;}
+    .content {text-align: center;}
+    canvas {image-rendering: pixelated; border: 2px solid #ccc; margin: 32px 0}
   </style>
 </head>
 <body>
-  <div style="position:absolute; top:10px; left:10px; z-index:10; color:#fff;">
-    <input type="file" id="romInput" accept=".ch8" />
-    <button id="loadBtn">Load ROM</button>
-    <span id="status"></span>
+  <div class="content">
+    <h1>CHIP-8 Emulator</h1>
+    <div>
+      1 - <input type="file" id="romInput" accept=".ch8" />
+      2 - <button id="loadBtn">Load ROM</button>
+      <span id="status"></span>
+    </div>
+    <canvas id="screen" width="64" height="32"></canvas>
   </div>
-  <canvas id="screen" width="64" height="32"></canvas>
+
   <script>
     const canvas = document.getElementById("screen");
     const ctx = canvas.getContext("2d");
@@ -80,7 +87,6 @@
       if (res.ok) {
         document.getElementById("status").textContent = "Loaded!";
         startEmulator();
-        document.getElementById("loadBtn").disabled = true;
       } else {
         const err = await res.json();
         document.getElementById("status").textContent = "Error: " + err.detail;

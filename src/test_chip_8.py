@@ -104,3 +104,63 @@ def test_draw_sprite_with_collision():
     assert chip8.regs['VF'] == 1
     idx = 5 * chip8.SCREEN_W + 5
     assert chip8.screen[idx] == 0
+
+
+def test_call_addr():
+    chip8.stack[:] = [0]*16   # clear all slots
+    chip8.sp = 0
+    chip8.regs['PC'] = 0x210
+
+    chip8.op_call_addr(0x300)
+
+    assert chip8.sp == 1
+    # the return address lives in slot sp-1 under a static stack:
+    assert chip8.stack[chip8.sp - 1] == 0x210
+    assert chip8.regs['PC'] == 0x300
+
+
+def test_ret_from_subroutine():
+    # Prepare a single return address on the stack
+    chip8.stack[:] = [0] * 16
+    chip8.stack[0] = 0x250
+    chip8.sp = 1
+    chip8.regs['PC'] = 0x300
+
+    # Perform return
+    chip8.op_ret_from_subroutine()
+
+    # SP should decrement and PC should be set to the return address
+    assert chip8.sp == 0
+    assert chip8.regs['PC'] == 0x250
+
+
+def test_ret_with_multiple_levels():
+    # Prepare multiple return addresses on the stack
+    chip8.stack[:] = [0] * 16
+    chip8.stack[0] = 0x240
+    chip8.stack[1] = 0x260
+    chip8.sp = 2
+    chip8.regs['PC'] = 0x200
+
+    # Perform return (should pop the last address)
+    chip8.op_ret_from_subroutine()
+
+    # SP should decrement by one and PC set to the most recent address
+    assert chip8.sp == 1
+    assert chip8.regs['PC'] == 0x260
+
+
+def test_se_vx_byte_skip():
+    # When Vx equals NN, PC should advance by 2 to skip next instruction
+    chip8.regs['V1'] = 0xAA
+    chip8.regs['PC'] = 0x200
+    chip8.op_se_vx_byte(1, 0xAA)
+    assert chip8.regs['PC'] == 0x202
+
+
+def test_se_vx_byte_no_skip():
+    # When Vx does not equal NN, PC should remain unchanged
+    chip8.regs['V1'] = 0xBB
+    chip8.regs['PC'] = 0x300
+    chip8.op_se_vx_byte(1, 0xCC)
+    assert chip8.regs['PC'] == 0x300
