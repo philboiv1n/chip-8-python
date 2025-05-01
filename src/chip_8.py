@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.0.7
+# Version 0.0.8
 # -----------------------------------------------
 
 
@@ -126,6 +126,10 @@ def match_op(op) -> bool:
     nnn = op & 0x0FFF # last 3
     nn = op & 0x00FF  # last 2
 
+    # create vx & vy
+    vx = f"V{n2:X}"
+    vy = f"V{n3:X}"
+
     match n1:
         case 0:
             if op == 0x00E0:
@@ -137,19 +141,40 @@ def match_op(op) -> bool:
         case 2:
             op_call_addr(nnn)
         case 3:
-            op_se_vx_byte(n2,nn)
+            op_se_vx_byte(vx,nn)
         case 4:
-            op_sne_vx_byte(n2,nn)
+            op_sne_vx_byte(vx,nn)
         case 5:
-            op_se_vx_vy(n2,n3)
+            op_se_vx_vy(vx,vy)
         case 6:
-            op_ld_vx_byte(n2, nn)
+            op_ld_vx_byte(vx, nn)
         case 7:
-            op_add_vx_byte(n2, nn)
+            op_add_vx_byte(vx, nn)
+        case 8:
+            if n4 == 0:
+                op_ld_vx_vy(vx,vy)
+            elif n4 == 1:
+                op_or_vx_vy(vx,vy)
+            elif n4 == 2:
+                op_and_vx_vy(vx,vy)
+            elif n4 == 3:
+                op_xor_vx_vy(vx,vy)
+            elif n4 == 4:
+                op_add_vx_vy(vx,vy)
+            elif n4 == 5:
+                op_sub_vx_vy(vx,vy)
+            elif n4 == 6:
+                op_shr_vx(vx)
+            elif n4 == 7:
+                op_subn_vx_vy(vx,vy)
+            elif n4 == 14:
+                op_shl_vx(vx)
+        case 9:
+            op_sne_vx_vy(vx,vy)
         case 10:
             op_ld_i_addr(nnn)
         case 13:
-            op_drw_vx_vy_n(n2, n3, n4)
+            op_drw_vx_vy_n(vx, vy, n4)
     return True  
 
 
@@ -168,7 +193,7 @@ def load_rom(path):
 
 
 # -----------------------------------------------
-# opcode related functions
+# Opcode Functions
 # -----------------------------------------------
 
 def op_disp_clear(): 
@@ -217,57 +242,154 @@ def op_call_addr(nnn):
     regs['PC'] = nnn & 0xFFF
 
 
-def op_se_vx_byte(x, nn): 
+def op_se_vx_byte(vx, nn): 
     """
     3xnn
     SE Vx, byte
     Skip the next instruction if Vx == nn.
     """
-    reg = f"V{x:X}"
-    if regs[reg] == nn:
+    if regs[vx] == nn:
         regs['PC'] = (regs['PC'] + 2) & 0xFFFF
   
 
-def op_sne_vx_byte(x, nn): 
+def op_sne_vx_byte(vx, nn): 
     """
     4xnn
     SNE Vx, byte
     Skip the next instruction if Vx != nn.
     """
-    reg = f"V{x:X}"
-    if regs[reg] != nn:
+    if regs[vx] != nn:
         regs['PC'] = (regs['PC'] + 2) & 0xFFFF
 
 
-def op_se_vx_vy(x, y): 
+def op_se_vx_vy(vx, vy): 
     """
     5xy0
     SE Vx, Vy
     Skip next instruction if Vx == Vy
     """
-    vx = f"V{x:X}"
-    vy = f"V{y:X}"
     if regs[vx] == regs[vy]:
         regs['PC'] = (regs['PC'] + 2) & 0xFFFF
   
 
-def op_ld_vx_byte(x, nn): 
+def op_ld_vx_byte(vx, nn): 
     """
     6xnn 
     LD Vx, byte
     Set Vx = nn.
     """
-    reg = f"V{x:X}"
-    regs[reg] = nn & 0xFF
+    regs[vx] = nn & 0xFF
 
 
-def op_add_vx_byte(x, nn): 
+def op_add_vx_byte(vx, nn): 
     """
     7xnn ADD Vx, byte
     Set Vx = Vx + nn (no carry flag).
     """
-    reg = f"V{x:X}"
-    regs[reg] = (regs[reg] + nn) & 0xFF
+    regs[vx] = (regs[vx] + nn) & 0xFF
+
+
+def op_ld_vx_vy(vx,vy):
+    """
+    8xy0 - LD Vx, Vy - Set Vx = Vy. 
+    Stores the value of register Vy in register Vx.
+    """
+    regs[vx] = regs[vy]
+
+
+def op_or_vx_vy(vx,vy):
+    """
+    8xy1 - OR Vx, Vy - Set Vx = Vx OR Vy. 
+    Performs a bitwise OR on the values of Vx and Vy, 
+    then stores the result in Vx.
+    """
+    regs[vx] = regs[vx] | regs[vy]
+
+
+def op_and_vx_vy(vx,vy):
+    """
+    8xy2 - AND Vx, Vy - Set Vx = Vx AND Vy. 
+    Performs a bitwise AND on the values of Vx and Vy, 
+    then stores the result in Vx.
+    """
+    regs[vx] = regs[vx] & regs[vy]
+
+
+def op_xor_vx_vy(vx,vy):
+    """
+    8xy3 - XOR Vx, Vy - Set Vx = Vx XOR Vy. 
+    Performs a bitwise XOR on the values of Vx and Vy, 
+    then stores the result in Vx.
+    """
+    regs[vx] = regs[vx] ^ regs[vy]
+
+
+def op_add_vx_vy(vx,vy):
+    """
+    8xy4 - ADD Vx, Vy - Set Vx = Vx + Vy, set VF = carry.
+    The values of Vx and Vy are added together. 
+    If the result is greater than 8 bits (i.e., > 255,) VF is set to 1, otherwise 0. 
+    Only the lowest 8 bits of the result are kept, and stored in Vx.
+    """
+    result = regs[vx] + regs[vy]
+    if result > 0xFF:
+        regs['VF'] = 1
+    else: 
+        regs['VF'] = 0
+    regs[vx] = result & 0xFF
+
+
+def op_sub_vx_vy(vx,vy):
+    """
+    8xy5 - SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow.
+    If Vx > Vy, then VF is set to 1, otherwise 0.
+    Then Vy is subtracted from Vx, and the result stored in Vx.
+    """
+    if regs[vx] > regs[vy]:
+        regs['VF'] = 1
+    else:
+        regs['VF'] = 0
+    regs[vx] = (regs[vx] - regs[vy]) & 0xFF
+
+
+def op_shr_vx(vx):
+    """
+    8xy6 - SHR Vx {, Vy}
+    Store least-significant bit of Vx in VF, then Vx >>= 1.
+    """
+    regs['VF'] = regs[vx] & 0x1
+    regs[vx] = (regs[vx] >> 1) & 0xFF
+
+
+def op_subn_vx_vy(vx,vy):
+    """
+    8xy7 - SUBN Vx, Vy
+    Set Vx = Vy - Vx; set VF = 0 on borrow, else 1.
+    """
+    if regs[vy] >= regs[vx]:
+        regs['VF'] = 1
+    else:
+        regs['VF'] = 0
+    regs[vx] = (regs[vy] - regs[vx]) & 0xFF
+
+
+def op_shl_vx(vx):
+    """
+    8xyE - SHL Vx {, Vy}
+    Store most-significant bit of Vx in VF, then Vx <<= 1.
+    """
+    regs['VF'] = (regs[vx] >> 7) & 1
+    regs[vx] = (regs[vx] << 1) & 0xFF
+
+
+def op_sne_vx_vy(vx,vy):
+    """
+    9xy0 - SNE Vx, Vy - Skip next instruction if Vx != Vy. 
+    The values of Vx and Vy are compared, and if they are not equal, 
+    the program counter is increased by 2
+    """
+    if regs[vx] != regs[vy]:
+        regs['PC'] = (regs['PC'] + 2) & 0xFFFF
 
 
 def op_ld_i_addr(nnn):
@@ -278,15 +400,15 @@ def op_ld_i_addr(nnn):
     regs['I'] = nnn
 
 
-def op_drw_vx_vy_n(x,y,n):
+def op_drw_vx_vy_n(vx,vy,n):
     """
     Dxyn - DRW Vx, Vy, nibble
     Draw sprite at (Vx, Vy) with height N
     Width of each line is 8 bit.
     set VF = 1 on any pixel collision, else 0.
     """
-    x_coord = regs[f"V{x:X}"] & (SCREEN_W - 1)
-    y_coord = regs[f"V{y:X}"] & (SCREEN_H - 1)
+    x_coord = regs[vx] & (SCREEN_W - 1)
+    y_coord = regs[vy] & (SCREEN_H - 1)
     i = regs['I']
     vf = 0
 
