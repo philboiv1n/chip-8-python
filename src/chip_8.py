@@ -1,9 +1,9 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.0.8
+# Version 0.0.9
 # -----------------------------------------------
-
+import random
 
 """
 MEMORY
@@ -36,7 +36,6 @@ KEYPAD
 Keypad state for 16 keys (False=up, True=down)
 """
 keypad = [False] * 16
-
 
 
 """
@@ -82,6 +81,18 @@ regs['I'] = 0
 # -----------------------------------------------
 
 """
+STEP
+Fetch, Decode & Execute Loop
+1 - Fetch the opcode
+2 - Match the opcode to a function
+3 - Execute
+"""
+def step() -> bool:
+    op = fetch()
+    return match_op(op)
+
+
+"""
 FETCH
 Fetch two bytes from memory to form a 16-bit opcode
 1. Read the byte at address regs['PC'] from memory -> opcode.
@@ -95,25 +106,13 @@ def fetch():
 	regs['PC'] = (regs['PC'] + 2) & 0xFFFF
 	return opcode
 
-
-"""
-STEP
-Fetch, Decode & Execute Loop
-1 - Fetch the opcode
-2 - Match the opcode to a function
-3 - Execute
-"""
-def step() -> bool:
-	op = fetch()
-	return match_op(op)
-	
-    
+	    
 def match_op(op) -> bool:
     """
     Match opcode with the appropriate function.
     Matching top 4 bits first (0 to F) then execute the assigned function.
     """
-    
+
     # Halt
     if op == 0xFFFF:
         return False
@@ -171,10 +170,19 @@ def match_op(op) -> bool:
                 op_shl_vx(vx)
         case 9:
             op_sne_vx_vy(vx,vy)
-        case 10:
+        case 10: # A
             op_ld_i_addr(nnn)
-        case 13:
+        case 11: # B
+            op_jump_v0_addr(nnn)
+        case 12: # C
+            op_rnd_vx(vx,nn)
+        case 13: # D
             op_drw_vx_vy_n(vx, vy, n4)
+        case 14: # E
+            if nn == 0x9E:
+                op_skp_vx(vx)
+            elif nn == 0xA1:
+                op_sknp_vx(vx)
     return True  
 
 
@@ -400,6 +408,24 @@ def op_ld_i_addr(nnn):
     regs['I'] = nnn
 
 
+def op_jump_v0_addr(nnn):
+    """
+    Bnnn - JP V0, addr - Jump to location nnn + V0. 
+    The program counter is set to nnn + the value of V0.
+    """
+    result = (nnn + regs['V0']) & 0xFFF
+    regs['PC'] = result
+
+
+def op_rnd_vx(vx,nn):
+    """
+    Cxkk - RND Vx, byte - Set Vx = random byte AND kk. 
+    Generates a random number from 0 to 255, which is then ANDed with the value kk.
+    """
+    rnd = random.getrandbits(8) # 0-255 integer
+    regs[vx] = rnd & nn
+
+
 def op_drw_vx_vy_n(vx,vy,n):
     """
     Dxyn - DRW Vx, Vy, nibble
@@ -425,3 +451,23 @@ def op_drw_vx_vy_n(vx,vy,n):
             screen[idx] = old ^ bit
 
     regs['VF'] = vf
+
+
+def op_skp_vx(vx):
+    """
+    Ex9E - SKP Vx 
+    Skip next instruction if key with the value of Vx is pressed. 
+    """
+    key = regs[vx]
+    if keypad[key]:
+        regs['PC'] = (regs['PC'] + 2) & 0xFFFF
+
+
+def op_sknp_vx(vx):
+    """
+    ExA1 - SKNP Vx 
+    Skip next instruction if key with the value of Vx is not pressed. 
+    """
+    key = regs[vx]
+    if not keypad[key]:
+        regs['PC'] = (regs['PC'] + 2) & 0xFFFF

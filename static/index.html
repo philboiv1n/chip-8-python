@@ -6,13 +6,16 @@
   <title>CHIP-8 Python Emulator | Phil Boivin</title>
   <style>
     html, body {font-family: Arial, Helvetica, sans-serif; height: 100%; margin: 0;}
-    body {display: flex; justify-content: center; align-items: center; background-color: #eee;}
+    body {display: flex; justify-content: center; align-items: center; background-color: #eeeeee;}
     h1 {font-family: 'Courier New', Courier, monospace;}
     .content {text-align: center;}
     canvas {image-rendering: pixelated; border: 2px solid #ccc; margin: 32px 0}
   </style>
 </head>
 <body>
+
+
+<!-- HTML -->
   <div class="content">
     <h1>CHIP-8 Emulator</h1>
     <div>
@@ -23,6 +26,9 @@
     <canvas id="screen" width="64" height="32"></canvas>
   </div>
 
+
+
+<!-- Javascript -->
   <script>
     const canvas = document.getElementById("screen");
     const ctx = canvas.getContext("2d");
@@ -41,19 +47,39 @@
       KeyZ:    0xA, KeyX:    0x0, KeyC:    0xB, KeyV:    0xF
     };
 
+    let emulatorStarted = false;
+
     function startEmulator() {
+      if (emulatorStarted) return;
+      emulatorStarted = true;
       const ws = new WebSocket(`ws://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
 
+      // Binary key event encoding: 0 = key up, 1 = key down
+      const KEY_UP = 0;
+      const KEY_DOWN = 1;
+      const downKeys = new Set();
+
+      function sendKey(k, isDown) {
+        const buf = new Uint8Array(2);
+        buf[0] = isDown ? KEY_DOWN : KEY_UP;
+        buf[1] = k;
+        ws.send(buf.buffer);
+      }
+
       ws.onopen = () => console.log("WebSocket connected");
-      ws.onclose = () => console.log("WebSocket closed");
+      ws.onclose = () => {
+        console.log("WebSocket closed");
+        downKeys.clear();
+        emulatorStarted = false;
+      };
       ws.onerror = e => console.error("WebSocket error", e);
 
       ws.onmessage = event => {
         const buf = new Uint8Array(event.data);
         // buf.length should be 2048 (64×32)
         for (let i = 0; i < buf.length; i++) {
-          const v   = buf[i] ? 255 : 0;
+          const v = buf[i] ? 255 : 0;
           const off = i * 4;
           imageData.data[off + 0] = v;
           imageData.data[off + 1] = v;
@@ -65,11 +91,18 @@
 
       window.addEventListener("keydown", e => {
         const k = keymap[e.code];
-        if (k !== undefined) ws.send(JSON.stringify({ type:"keydown", key:k }));
+        if (k !== undefined && !e.repeat && !downKeys.has(e.code)) {
+          downKeys.add(e.code);
+          sendKey(k, true);
+        }
+
       });
       window.addEventListener("keyup", e => {
         const k = keymap[e.code];
-        if (k !== undefined) ws.send(JSON.stringify({ type:"keyup",   key:k }));
+        if (k !== undefined && downKeys.has(e.code)) {
+          downKeys.delete(e.code);
+          sendKey(k, false);
+        }
       });
     }
 
@@ -93,5 +126,6 @@
       }
     };
   </script>
+
 </body>
 </html>

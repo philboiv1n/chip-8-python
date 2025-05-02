@@ -1,3 +1,8 @@
+# -----------------------------------------------
+# CHIP-8 Python Emulator - Tests
+# By Phil Boivin - 2025
+# Version 0.0.9
+# -----------------------------------------------
 import importlib.util
 import os
 import pytest
@@ -272,4 +277,58 @@ def test_sne_vx_vy_no_skip_when_equal():
     chip8.regs['V5'] = 0x07
     chip8.regs['PC'] = 0x200
     chip8.op_sne_vx_vy('V4', 'V5')
+    assert chip8.regs['PC'] == 0x200
+
+def test_jump_v0_addr_basic():
+    # When V0 is 0x10 and nnn is 0x200, PC should become 0x210 (masked to 12 bits)
+    chip8.regs['V0'] = 0x10
+    chip8.regs['PC'] = 0x000
+    chip8.op_jump_v0_addr(0x200)
+    assert chip8.regs['PC'] == (0x200 + 0x10) & 0xFFF
+
+def test_jump_v0_addr_wraps():
+    # When V0 + nnn exceeds 0xFFF, it should wrap modulo 0x1000
+    chip8.regs['V0'] = 0xF00
+    chip8.regs['PC'] = 0x000
+    chip8.op_jump_v0_addr(0xA00)
+    assert chip8.regs['PC'] == (0xA00 + 0xF00) & 0xFFF
+
+def test_rnd_vx_masks_random(monkeypatch):
+    # Monkeypatch random.getrandbits to return a known byte
+    monkeypatch.setattr(chip8.random, 'getrandbits', lambda bits: 0b10101111)
+    chip8.regs['V2'] = 0x00
+    chip8.op_rnd_vx('V2', 0x0F)
+    expected = 0b10101111 & 0x0F
+    assert chip8.regs['V2'] == expected
+
+def test_skp_vx_skips_when_key_pressed():
+    # When the keypad at Vx is True, PC should advance by 2
+    chip8.regs['V2'] = 0x03   # test with key index 3
+    chip8.regs['PC'] = 0x200
+    chip8.keypad[3] = True
+    chip8.op_skp_vx('V2')
+    assert chip8.regs['PC'] == 0x202
+
+def test_skp_vx_no_skip_when_key_not_pressed():
+    # When the keypad at Vx is False, PC should not change
+    chip8.regs['V4'] = 0x05   # test with key index 5
+    chip8.regs['PC'] = 0x200
+    chip8.keypad[5] = False
+    chip8.op_skp_vx('V4')
+    assert chip8.regs['PC'] == 0x200
+
+def test_sknp_vx_skips_when_key_not_pressed():
+    # ExA1: Skip when the keypad at Vx is not pressed
+    chip8.regs['V2'] = 0x03   # key index 3
+    chip8.regs['PC'] = 0x200
+    chip8.keypad[3] = False
+    chip8.op_sknp_vx('V2')
+    assert chip8.regs['PC'] == 0x202
+
+def test_sknp_vx_no_skip_when_key_pressed():
+    # ExA1: Do not skip when the keypad at Vx is pressed
+    chip8.regs['V4'] = 0x05   # key index 5
+    chip8.regs['PC'] = 0x200
+    chip8.keypad[5] = True
+    chip8.op_sknp_vx('V4')
     assert chip8.regs['PC'] == 0x200
