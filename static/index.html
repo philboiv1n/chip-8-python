@@ -9,7 +9,7 @@
     body {display: flex; justify-content: center; align-items: center; background-color: #eeeeee;}
     h1 {font-family: 'Courier New', Courier, monospace;}
     .content {text-align: center;}
-    canvas {image-rendering: pixelated; border: 2px solid #ccc; margin: 32px 0}
+    canvas {image-rendering: pixelated; border: 2px solid #ccc; margin: 32px 0; background-color: #000;}
   </style>
 </head>
 <body>
@@ -22,6 +22,10 @@
       1 - <input type="file" id="romInput" accept=".ch8" />
       2 - <button id="loadBtn">Load ROM</button>
       <span id="status"></span>
+    </div>
+    <div style="margin: 16px 0;">
+      <label for="tpsRange">Ticks / sec: <span id="tpsValue">600</span></label><br/>
+      <input type="range" id="tpsRange" min="100" max="2000" step="50" value="600" />
     </div>
     <canvas id="screen" width="64" height="32"></canvas>
   </div>
@@ -54,6 +58,18 @@
       emulatorStarted = true;
       const ws = new WebSocket(`ws://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
+
+      const tpsRange = document.getElementById("tpsRange");
+      const tpsValue = document.getElementById("tpsValue");
+      // Send initial speed on open
+      ws.addEventListener("open", () => {
+        ws.send(JSON.stringify({ type: "set_speed", tps: parseInt(tpsRange.value, 10) }));
+      });
+      // Update displayed value and send new speed on slider input
+      tpsRange.oninput = () => {
+        tpsValue.textContent = tpsRange.value;
+        ws.send(JSON.stringify({ type: "set_speed", tps: parseInt(tpsRange.value, 10) }));
+      };
 
       // Binary key event encoding: 0 = key up, 1 = key down
       const KEY_UP = 0;
