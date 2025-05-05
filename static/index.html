@@ -25,7 +25,7 @@
     </div>
     <div style="margin: 16px 0;">
       <label for="tpsRange">Ticks / sec: <span id="tpsValue">600</span></label><br/>
-      <input type="range" id="tpsRange" min="100" max="2000" step="50" value="600" />
+      <input type="range" id="tpsRange" min="100" max="3000" step="100" value="600" />
     </div>
     <canvas id="screen" width="64" height="32"></canvas>
   </div>
@@ -51,21 +51,82 @@
       KeyZ:    0xA, KeyX:    0x0, KeyC:    0xB, KeyV:    0xF
     };
 
+
+    // Audio
+    let audioCtx = null;
+    let oscillator = null;
+
+      // Initialize AudioContext (needs user interaction like button click)
+      function initAudio() {
+          if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
+              try {
+                  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                  console.log("AudioContext initialized.");
+              } catch(e) {
+                  console.error("Web Audio API is not supported or failed to initialize:", e);
+                  document.getElementById("status").textContent = "Audio init failed.";
+              }
+          } else if (!audioCtx) {
+               console.warn("Web Audio API not supported by this browser.");
+          }
+          // If already initialized, do nothing.
+      }
+
+      // Placeholder: Start a beep sound
+      function beepOn() {
+          initAudio(); // Ensure context exists
+          if (!audioCtx || oscillator) return; // No context or beep already playing
+
+          try {
+              oscillator = audioCtx.createOscillator();
+              oscillator.type = 'square'; // A typical beep sound
+              oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // Frequency in Hz (A4 note)
+              oscillator.connect(audioCtx.destination);
+              oscillator.start();
+              // console.log("Beep ON"); // Optional logging
+          } catch (e) {
+              console.error("Error starting beep:", e);
+              oscillator = null; // Reset on error
+          }
+      }
+
+      // Placeholder: Stop the beep sound
+      function beepOff() {
+          if (oscillator && audioCtx) {
+              try {
+                  oscillator.stop();
+                  oscillator.disconnect(); // Important to disconnect
+              } catch (e) {
+                  // Ignore errors if stop() was called rapidly after start etc.
+              } finally {
+                   oscillator = null;
+                  // console.log("Beep OFF"); // Optional logging
+              }
+          }
+      }
+      // --- End Sound Functions ---
+
+
     let emulatorStarted = false;
 
     function startEmulator() {
       if (emulatorStarted) return;
       emulatorStarted = true;
+
       const ws = new WebSocket(`ws://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
 
       const tpsRange = document.getElementById("tpsRange");
       const tpsValue = document.getElementById("tpsValue");
-      // Send initial speed on open
-      ws.addEventListener("open", () => {
-        ws.send(JSON.stringify({ type: "set_speed", tps: parseInt(tpsRange.value, 10) }));
-      });
-      // Update displayed value and send new speed on slider input
+
+      ws.onopen = () => {
+          console.log("WebSocket connected");
+          // Send initial speed when connection opens
+          const initialSpeed = parseInt(tpsRange.value, 10);
+          ws.send(JSON.stringify({ type: "set_speed", tps: initialSpeed }));
+          console.log(`Sent initial speed: ${initialSpeed}`);
+      };
+      
       tpsRange.oninput = () => {
         tpsValue.textContent = tpsRange.value;
         ws.send(JSON.stringify({ type: "set_speed", tps: parseInt(tpsRange.value, 10) }));
@@ -91,28 +152,95 @@
       };
       ws.onerror = e => console.error("WebSocket error", e);
 
+      let waitingForKey = false;
+
       ws.onmessage = event => {
-        const buf = new Uint8Array(event.data);
-        // buf.length should be 2048 (64×32)
-        for (let i = 0; i < buf.length; i++) {
-          const v = buf[i] ? 255 : 0;
-          const off = i * 4;
-          imageData.data[off + 0] = v;
-          imageData.data[off + 1] = v;
-          imageData.data[off + 2] = v;
-          imageData.data[off + 3] = 255;
-        }
-        ctx.putImageData(imageData, 0, 0);
-      };
+          // --- Text message processing ---
+          if (typeof event.data === "string") {
+              let msg;
+              try {
+                   msg = JSON.parse(event.data);
+              } catch (e) {
+                  console.error("Failed to parse JSON message:", event.data, e);
+                  return; // Ignore invalid message
+              }
+
+              // Log received message for debugging
+              // console.log("Received Text:", msg);
+
+              // Handle 'need_key' message
+              if (msg.type === "need_key") {
+                  console.log("Emulator needs key for Vx", msg.vx);
+                  // Update status display for the user
+                  document.getElementById("status").textContent = `Waiting for key (V${msg.vx.toString(16).toUpperCase()})...`;
+                  waitingForKey = true;
+              }
+
+              // Handle 'sound' message
+              else if (msg.type === "sound") {
+                  // console.log(`Sound state: ${msg.state}`); // Optional logging
+                  if (msg.state === "on") {
+                      beepOn(); // Call function to start sound
+                  } else {
+                      beepOff(); // Call function to stop sound
+                  }
+              }
+              // Handle optional 'status' messages from backend
+              else if (msg.type === "status" && msg.state === "halted") {
+                 console.log("Emulator halted.");
+                 document.getElementById("status").textContent = "Emulator halted.";
+                 // Optionally: ws.close(); or disable controls
+              }
+              // Note: No 'return;' here, allows processing multiple message types if needed,
+              // although currently backend likely sends one logical message at a time.
+
+          }
+          // --- Binary framebuffer update processing ---
+          else if (event.data instanceof ArrayBuffer) {
+              // If we were waiting for a key, the arrival of a display frame
+              // implies the emulator is running again. Update status.
+              if (waitingForKey) {
+                  document.getElementById("status").textContent = "Running"; // Or simply clear it: = ""
+              }
+              // Ensure waitingForKey is false now that we are receiving display updates
+              waitingForKey = false;
+
+              const buf = new Uint8Array(event.data);
+              // Check buffer length matches expected size (64*32 = 2048 pixels)
+              if (buf.length !== 2048) {
+                   console.warn(`Received framebuffer with unexpected size: ${buf.length}`);
+                   return; // Don't try to render incorrect size
+              }
+
+              // Render the buffer to the canvas
+              for (let i = 0; i < buf.length; i++) {
+                  const v = buf[i] === 1 ? 255 : 0; // Pixel on (white) or off (black)
+                  const off = i * 4; // Offset into imageData (RGBA)
+                  imageData.data[off + 0] = v;     // Red
+                  imageData.data[off + 1] = v;     // Green
+                  imageData.data[off + 2] = v;     // Blue
+                  imageData.data[off + 3] = 255;   // Alpha (fully opaque)
+              }
+              ctx.putImageData(imageData, 0, 0);
+          } else {
+              console.warn("Received unknown message type:", event.data);
+          }
+      }; // End of ws.onmessage
 
       window.addEventListener("keydown", e => {
         const k = keymap[e.code];
-        if (k !== undefined && !e.repeat && !downKeys.has(e.code)) {
-          downKeys.add(e.code);
-          sendKey(k, true);
+        if (k !== undefined && !e.repeat) {
+          if (waitingForKey) {
+            ws.send(JSON.stringify({ type: "key_event_fx0a", value: k }));
+            console.log(`Sent key ${k} for Fx0A wait.`); // Add log
+            waitingForKey = false; // Reset wait state
+          } else if (!downKeys.has(e.code)) {
+            downKeys.add(e.code);
+            sendKey(k, true); // Send standard binary key down
+          }
         }
-
       });
+
       window.addEventListener("keyup", e => {
         const k = keymap[e.code];
         if (k !== undefined && downKeys.has(e.code)) {
@@ -122,25 +250,47 @@
       });
     }
 
-    document.getElementById("loadBtn").onclick = async () => {
-      const input = document.getElementById("romInput");
-      if (!input.files.length) {
-        alert("Please select a .ch8 file");
-        return;
-      }
-      const file = input.files[0];
-      document.getElementById("status").textContent = "Uploading...";
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch("/load", { method: "POST", body: form });
-      if (res.ok) {
-        document.getElementById("status").textContent = "Loaded!";
-        startEmulator();
-      } else {
-        const err = await res.json();
-        document.getElementById("status").textContent = "Error: " + err.detail;
-      }
-    };
+  
+    
+      document.getElementById("loadBtn").onclick = async () => {
+          const input = document.getElementById("romInput");
+          if (!input.files.length) {
+              alert("Please select a .ch8 file");
+              return;
+          }
+          const file = input.files[0];
+          document.getElementById("status").textContent = "Uploading..."; // Set status
+
+          const form = new FormData();
+          form.append("file", file); // Add the selected file to the form data
+
+          try { // Add try..catch around fetch for network errors
+              const res = await fetch("/load", { method: "POST", body: form });
+
+              if (res.ok) {
+                  document.getElementById("status").textContent = "Loaded! Connecting..."; // Update status
+                  initAudio(); // Initialize Web Audio context HERE
+                  startEmulator(); // Start the emulator WebSocket etc.
+              } else {
+                  // Handle HTTP errors (like 400 Bad Request, 500 Server Error)
+                  let errorDetail = `HTTP error ${res.status}`;
+                  try {
+                      // Try to parse JSON error detail from backend
+                      const err = await res.json();
+                      errorDetail = err.detail || errorDetail;
+                  } catch (e) {
+                      // If response wasn't JSON, use status text
+                      errorDetail = `${errorDetail} - ${res.statusText}`;
+                  }
+                  console.error("Load ROM failed:", errorDetail);
+                  document.getElementById("status").textContent = "Error: " + errorDetail;
+              }
+          } catch (networkError) {
+               // Handle network errors (fetch couldn't reach server)
+               console.error("Network error during ROM load:", networkError);
+               document.getElementById("status").textContent = "Network Error during load.";
+          }
+      };
   </script>
 
 </body>
