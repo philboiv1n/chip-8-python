@@ -107,7 +107,6 @@ async def websocket_endpoint(ws: WebSocket):
                     key_index = key_data[1] # 0x0 to 0xF
                     if 0 <= key_index <= 0xF:
                         chip.keypad[key_index] = (key_state == KEY_DOWN)
-                        # print(f"Keypad state updated: Key {key_index:X} {'Pressed' if chip.keypad[key_index] else 'Released'}")
                     else:
                         print(f"Received invalid key index in binary message: {key_index}")
                 else:
@@ -149,9 +148,7 @@ async def emulator_runner(ws: WebSocket, key_event_queue: asyncio.Queue):
 
     try:
         while True:
-            # --- ADDED: Reset draw wait flag at start of frame ---
             chip._waiting_for_draw_sync = False
-            # ----------------------------------------------------
             current_time = time.perf_counter()
             delta_time = current_time - last_frame_update_time
 

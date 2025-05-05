@@ -83,7 +83,6 @@
               oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // Frequency in Hz (A4 note)
               oscillator.connect(audioCtx.destination);
               oscillator.start();
-              // console.log("Beep ON"); // Optional logging
           } catch (e) {
               console.error("Error starting beep:", e);
               oscillator = null; // Reset on error
@@ -104,8 +103,6 @@
               }
           }
       }
-      // --- End Sound Functions ---
-
 
     let emulatorStarted = false;
 
@@ -164,9 +161,6 @@
                   console.error("Failed to parse JSON message:", event.data, e);
                   return; // Ignore invalid message
               }
-
-              // Log received message for debugging
-              // console.log("Received Text:", msg);
 
               // Handle 'need_key' message
               if (msg.type === "need_key") {

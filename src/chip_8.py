@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
 # By Phil Boivin - 2025
-# Version 0.1.00
+# Version 0.1.1
 # -----------------------------------------------
 import random
 import time
@@ -25,7 +25,6 @@ class Chip8:
         self.pc       = 0x200
         self.I        = 0
         # REGISTERS V0..VF
-        # self.regs     = { f'V{i:X}': 0 for i in range(16) }
         self.regs = bytearray(16) # Use bytearray for V0-VF registers
         # DISPLAY
         self.SCREEN_W = 64
@@ -375,7 +374,6 @@ class Chip8:
         self.regs[0xF] = 0
         
 
-
     def op_and_vx_vy(self, vx_idx,vy_idx):
         """
         8xy2 - AND Vx, Vy - Set Vx = Vx AND Vy. 
@@ -410,33 +408,18 @@ class Chip8:
         self.regs[0xF] = 1 if total > 0xFF else 0
 
 
-    # def op_sub_vx_vy(self, vx_idx, vy_idx):
-    #     """
-    #     8xy5 - SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow.
-    #     If Vx > Vy, then VF is set to 1, otherwise 0 (tests expect VF=0 on equal).
-    #     Then Vy is subtracted from Vx, and the result stored in Vx.
-    #     """
-    #     vx_val = self.regs[vx_idx]
-    #     vy_val = self.regs[vy_idx]
-    #     result = (vx_val - vy_val) & 0xFF
-    #     self.regs[vx_idx] = result
-    #     self.regs[0xF] = 1 if vx_val > vy_val else 0
-
     def op_sub_vx_vy(self, vx_idx, vy_idx):
+        """
+        8xy5 - SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow.
+        If Vx > Vy, then VF is set to 1, otherwise 0 (tests expect VF=0 on equal).
+        Then Vy is subtracted from Vx, and the result stored in Vx.
+        """
         vx_val = self.regs[vx_idx]
         vy_val = self.regs[vy_idx]
-        vf_before = self.regs[0xF] # Capture VF before change
-
-        # print(f"--- 8xy5 Start ---")
-        # print(f"  Before: Vx({vx_idx:X})={vx_val}, Vy({vy_idx:X})={vy_val}, VF={vf_before}")
         flag_value = 1 if vx_val > vy_val else 0
         result = (vx_val - vy_val) & 0xFF
         self.regs[vx_idx] = result
-        # self.regs[0xF] = 1 if vx_val > vy_val else 0
         self.regs[0xF] = flag_value
-
-        # print(f"  After:  Vx({vx_idx:X})={self.regs[vx_idx]}, VF={self.regs[0xF]}")
-        # print(f"--- 8xy5 End ---")
 
 
     def op_shr_vx(self, vx_idx):
@@ -455,25 +438,12 @@ class Chip8:
         8xy7 - SUBN Vx, Vy
         Set Vx = Vy - Vx; set VF = 0 on borrow, else 1.
         """
-        # vx_val = self.regs[vx_idx]
-        # vy_val = self.regs[vy_idx]
-        # result = (vy_val - vx_val) & 0xFF
-        # self.regs[vx_idx] = result
-        # self.regs[0xF] = 1 if vy_val >= vx_val else 0
         vx_val = self.regs[vx_idx]
         vy_val = self.regs[vy_idx]
-        # 1. Determine flag value based on initial comparison (NO borrow if Vy >= Vx)
         flag_value = 1 if vy_val >= vx_val else 0
-
-        # 2. Calculate result
         result = (vy_val - vx_val) & 0xFF
-
-        # 3. Store result in Vx
         self.regs[vx_idx] = result
-
-        # 4. Store flag in VF
         self.regs[0xF] = flag_value
-
 
 
     def op_shl_vx(self, vx_idx):
@@ -523,102 +493,6 @@ class Chip8:
         self.regs[vx_idx] = rnd & nn
 
 
-    # def op_drw_vx_vy_n(self, vx, vy, n):
-    #     """
-    #     Dxyn - DRW Vx, Vy, nibble
-    #     Draw sprite at (Vx, Vy) with height N
-    #     Width of each line is 8 bit.
-    #     set VF = 1 on any pixel collision, else 0.
-    #     Honors self.clip: if True, pixels outside screen are dropped; if False, they wrap.
-    #     """
-    #     # Initial draw coordinates wrap modulo screen size
-    #     base_x = self.regs[vx] % self.SCREEN_W
-    #     base_y = self.regs[vy] % self.SCREEN_H
-    #     i = self.I
-    #     vf = 0
-
-    #     for r in range(n):
-    #         y = base_y + r
-    #         # Clip rows beyond bottom edge
-    #         if y < 0 or y >= self.SCREEN_H:
-    #             break
-    #         sprite = self.mem[i + r]
-    #         row_offset = y * self.SCREEN_W
-
-    #         for b in range(8):
-    #             x = base_x + b
-    #             # Clip columns beyond right edge
-    #             if x < 0 or x >= self.SCREEN_W:
-    #                 break
-    #             bit = (sprite >> (7 - b)) & 1
-    #             idx = row_offset + x
-    #             old = self.screen[idx]
-    #             if old & bit:
-    #                 vf = 1
-    #             self.screen[idx] = old ^ bit
-
-    #     self.regs['VF'] = vf
-    #     # Quirk: block until the next display frame
-    #     self.wait_for_vblank = True
-
-    # def op_drw_vx_vy_n(self, vx_idx, vy_idx, n):
-    #     """
-    #     Dxyn - DRW Vx, Vy, nibble
-    #     Draw sprite at (Vx, Vy) with height N. Width 8 bits.
-    #     Handles wrapping OR clipping based on self.quirk_clipping.
-    #     Sets VF = 1 on pixel collision, else 0.
-    #     Optionally sets wait flag based on self.quirk_display_wait.
-    #     """
-    #     # Get base coordinates from registers
-    #     base_x = self.regs[vx_idx]
-    #     base_y = self.regs[vy_idx]
-    #     i = self.I
-    #     self.regs[0xF] = 0 # Reset VF (collision flag)
-
-    #     for r in range(n):
-    #         # Calculate wrapped Y coordinate for the row
-    #        # y = (base_y + r) % self.SCREEN_H
-    #         y = base_y + r
-
-    #          # --- Clipping Quirk Logic (Y) ---
-    #         if self.quirk_clipping:
-    #             if y >= self.SCREEN_H:
-    #                 continue # Skip row if clipped at bottom
-    #         else: # Wrapping Logic (Y)
-    #             y %= self.SCREEN_H
-    #         # --- End Clipping Quirk Logic ---
-
-    #         sprite_byte = self.mem[i + r]
-    #         row_offset = y * self.SCREEN_W # Pre-calculate row start index
-
-    #         for b in range(8):
-    #             # Calculate wrapped X coordinate for the pixel
-    #             # x = (base_x + b) % self.SCREEN_W
-
-    #             x = base_x + b
-
-    #             # --- Clipping Quirk Logic (X) ---
-    #             if self.quirk_clipping:
-    #                 if x >= self.SCREEN_W:
-    #                     continue # Skip pixel if clipped at right
-    #             else: # Wrapping Logic (X)
-    #                 x %= self.SCREEN_W
-    #             # --- End Clipping Quirk Logic ---
-
-    #             # Check if the sprite pixel is set (1)
-    #             if (sprite_byte >> (7 - b)) & 1:
-    #                 idx = row_offset + x # Calculate final screen buffer index
-    #                 # Check for collision BEFORE drawing
-    #                 if self.screen[idx] == 1:
-    #                     self.regs[0xF] = 1 # Set collision flag
-    #                 # Draw the pixel (XOR)
-    #                 self.screen[idx] ^= 1
-
-    #     # --- Display Wait Quirk Logic ---
-    #     if self.quirk_display_wait:
-    #         self._waiting_for_draw_sync = True
-
-
     def op_drw_vx_vy_n(self, vx_idx, vy_idx, n):
         """
         Dxyn - DRW Vx, Vy, nibble
@@ -628,11 +502,9 @@ class Chip8:
         Sets VF = 1 on pixel collision, else 0.
         Optionally sets wait flag based on self.quirk_display_wait.
         """
-        # --- FIX: Wrap BASE coordinates FIRST ---
         # This applies regardless of the clipping quirk for individual pixels.
         base_x = self.regs[vx_idx] % self.SCREEN_W
         base_y = self.regs[vy_idx] % self.SCREEN_H
-        # --- End Fix ---
 
         i = self.I
         self.regs[0xF] = 0 # Reset VF (collision flag)
