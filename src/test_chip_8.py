@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator - Tests
-# By Phil Boivin - 2025
-# Version 0.1.1
+# By Phil Boivin - 2026
+# Version 0.2.0
 # -----------------------------------------------
 import pytest
 from src.chip_8 import Chip8, NeedKey

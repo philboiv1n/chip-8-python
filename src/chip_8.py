@@ -1,7 +1,7 @@
 # -----------------------------------------------
 # CHIP-8 Python Emulator
-# By Phil Boivin - 2025
-# Version 0.1.1
+# By Phil Boivin - 2026
+# Version 0.2.0
 # -----------------------------------------------
 import logging
 import random
