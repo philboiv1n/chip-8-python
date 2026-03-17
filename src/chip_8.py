@@ -3,8 +3,11 @@
 # By Phil Boivin - 2025
 # Version 0.1.1
 # -----------------------------------------------
+import logging
 import random
 import time
+
+logger = logging.getLogger(__name__)
 
 class NeedKey(Exception):
     def __init__(self, vx_idx): # Store the index
@@ -65,6 +68,8 @@ class Chip8:
         
         # Internal state for display wait quirk
         self._waiting_for_draw_sync = False
+        # Previous keypad state for detecting key press transitions (Fx0A)
+        self._prev_keypad = [False] * 16
 
 
     # -----------------------------------------------
@@ -164,15 +169,16 @@ class Chip8:
                     self.op_sub_vx_vy(n2,n3)
                     return True
                 elif n4 == 6:
-                    self.op_shr_vx(n2)
+                    self.op_shr_vx(n2, n3)
                     return True
                 elif n4 == 7:
                     self.op_subn_vx_vy(n2,n3)
                     return True
                 elif n4 == 14:
-                    self.op_shl_vx(n2)
+                    self.op_shl_vx(n2, n3)
                     return True
                 else:
+                    logger.warning("Unknown 8xxx opcode: %04X at PC=%03X", op, self.pc - 2)
                     return True
             case 9:
                 self.op_sne_vx_vy(n2,n3)
@@ -197,6 +203,7 @@ class Chip8:
                     self.op_sknp_vx(n2)
                     return True
                 else:
+                    logger.warning("Unknown Exxx opcode: %04X at PC=%03X", op, self.pc - 2)
                     return True
             case 15: # F
                 if nn == 0x07:
@@ -227,22 +234,38 @@ class Chip8:
                     self.op_ld_vx_i(n2)
                     return True
                 else:
+                    logger.warning("Unknown Fxxx opcode: %04X at PC=%03X", op, self.pc - 2)
                     return True
-        return True  
+        return True
+
+
+    def reset(self):
+        """Reset all mutable state to power-on defaults (preserves font data)."""
+        self.mem[0x200:] = bytearray(self.MEM_SIZE - 0x200)
+        self.stack = [0] * 16
+        self.sp = 0
+        self.dt = 0
+        self.st = 0
+        self.pc = 0x200
+        self.I = 0
+        self.regs[:] = bytearray(16)
+        self.screen[:] = bytearray(self.SCREEN_W * self.SCREEN_H)
+        self.keypad = [False] * 16
+        self._waiting_for_draw_sync = False
+        self._prev_keypad = [False] * 16
 
 
     def load_rom(self, path):
         """
         Load .ch8 binary (ROM)
-        Make sure it fits in the 4K memory above 0x200
-        Copy into memory and reset PC for the first instruction
+        Resets all state, then loads the ROM into memory at 0x200.
         """
         with open(path, "rb") as f:
             program = f.read()
         if len(program) > self.MEM_SIZE - 0x200:
             raise RuntimeError("ROM too large for memory")
+        self.reset()
         self.mem[0x200 : 0x200 + len(program)] = program
-        self.pc = 0x200
 
 
     def update_timers(self):
@@ -254,6 +277,11 @@ class Chip8:
             self.dt -= 1
         if self.st > 0:
             self.st -= 1
+
+    def sync_prev_keypad(self):
+        """Snapshot current keypad state for Fx0A press-transition detection.
+        Should be called once per frame after all CPU cycles are done."""
+        self._prev_keypad = list(self.keypad)
 
     @property
     def is_sound_on(self) -> bool:
@@ -416,18 +444,19 @@ class Chip8:
         """
         vx_val = self.regs[vx_idx]
         vy_val = self.regs[vy_idx]
-        flag_value = 1 if vx_val > vy_val else 0
+        flag_value = 1 if vx_val >= vy_val else 0
         result = (vx_val - vy_val) & 0xFF
         self.regs[vx_idx] = result
         self.regs[0xF] = flag_value
 
 
-    def op_shr_vx(self, vx_idx):
+    def op_shr_vx(self, vx_idx, vy_idx):
         """
         8xy6 - SHR Vx {, Vy}
-        Store least-significant bit of Vx in VF, then Vx >>= 1.
+        If quirk_shifting is False, use Vy's value; otherwise use Vx's value.
+        Store least-significant bit in VF, then shift right by 1.
         """
-        val = self.regs[vx_idx]
+        val = self.regs[vy_idx] if not self.quirk_shifting else self.regs[vx_idx]
         lsb = val & 0x1
         self.regs[vx_idx] = (val >> 1) & 0xFF
         self.regs[0xF] = lsb
@@ -446,12 +475,13 @@ class Chip8:
         self.regs[0xF] = flag_value
 
 
-    def op_shl_vx(self, vx_idx):
+    def op_shl_vx(self, vx_idx, vy_idx):
         """
         8xyE - SHL Vx {, Vy}
-        Store most-significant bit of Vx in VF, then Vx <<= 1.
+        If quirk_shifting is False, use Vy's value; otherwise use Vx's value.
+        Store most-significant bit in VF, then shift left by 1.
         """
-        val = self.regs[vx_idx]
+        val = self.regs[vy_idx] if not self.quirk_shifting else self.regs[vx_idx]
         msb = (val >> 7) & 0x1
         self.regs[vx_idx] = (val << 1) & 0xFF
         self.regs[0xF] = msb
@@ -510,6 +540,8 @@ class Chip8:
         self.regs[0xF] = 0 # Reset VF (collision flag)
 
         for r in range(n):
+            if i + r >= self.MEM_SIZE:
+                break
             sprite_byte = self.mem[i + r]
             # Calculate potential Y relative to the (already wrapped) base_y
             pixel_row_y = base_y + r
@@ -560,20 +592,20 @@ class Chip8:
 
     def op_skp_vx(self, vx_idx):
         """
-        Ex9E - SKP Vx 
-        Skip next instruction if key with the value of Vx is pressed. 
+        Ex9E - SKP Vx
+        Skip next instruction if key with the value of Vx is pressed.
         """
-        key = self.regs[vx_idx]
+        key = self.regs[vx_idx] & 0xF
         if self.keypad[key]:
             self.pc = (self.pc + 2) & 0xFFFF
 
 
     def op_sknp_vx(self, vx_idx):
         """
-        ExA1 - SKNP Vx 
-        Skip next instruction if key with the value of Vx is not pressed. 
+        ExA1 - SKNP Vx
+        Skip next instruction if key with the value of Vx is not pressed.
         """
-        key = self.regs[vx_idx]
+        key = self.regs[vx_idx] & 0xF
         if not self.keypad[key]:
             self.pc = (self.pc + 2) & 0xFFFF
 
@@ -590,15 +622,14 @@ class Chip8:
     def op_ld_vx_k(self, vx_idx):
         """
         Fx0A - LD Vx, K
-        Wait for a key press, store the value of the key in Vx. 
+        Wait for a key press transition (newly pressed), store the value of the key in Vx.
         All execution stops until a key is pressed, then the value of that key is stored in Vx.
         """
-        # Check for any key already pressed; if so, store it and return
-        for idx, pressed in enumerate(self.keypad):
-            if pressed:
+        for idx in range(16):
+            if self.keypad[idx] and not self._prev_keypad[idx]:
                 self.regs[vx_idx] = idx
                 return
-        # No key pressed: block until next key event
+        # No new key press detected: block until next key event
         raise NeedKey(vx_idx)
 
 
@@ -625,7 +656,7 @@ class Chip8:
         Fx1E - ADD I, Vx 
         Set I = I + Vx. 
         """
-        self.I = (self.I + self.regs[vx_idx]) & 0xFFF
+        self.I = (self.I + self.regs[vx_idx]) & 0xFFFF
 
 
     def op_ld_f_vx(self, vx_idx):
@@ -633,13 +664,15 @@ class Chip8:
         Fx29 - LD F, Vx 
         Set I = location of sprite for digit Vx. 
         """
-        self.I = self.FONT_START + (self.regs[vx_idx] * 5)
+        self.I = self.FONT_START + ((self.regs[vx_idx] & 0xF) * 5)
 
 
     def op_ld_b_vx(self, vx_idx):
         """
-        Fx33 - LD B, Vx Store BCD representation of Vx in memory locations I, I+1, and I+2. 
+        Fx33 - LD B, Vx Store BCD representation of Vx in memory locations I, I+1, and I+2.
         """
+        if self.I + 2 >= self.MEM_SIZE:
+            raise RuntimeError(f"Memory overflow: BCD write at I={self.I:03X} exceeds MEM_SIZE")
         n = self.regs[vx_idx]
         hund = (n // 100) % 10
         tens = (n //  10) % 10
@@ -660,17 +693,22 @@ class Chip8:
                 f"but MEM_SIZE is {self.MEM_SIZE:03X}")
         for i in range(x+1):
             self.mem[self.I + i] = self.regs[i]
-        self.I = (self.I + x + 1) & 0xFFF
+        if self.quirk_load_store:
+            self.I = (self.I + x + 1) & 0xFFFF
 
 
     def op_ld_vx_i(self, x):
         """
-        Fx65 - LD Vx, [I] Read registers V0 through Vx from memory starting at location I. 
+        Fx65 - LD Vx, [I] Read registers V0 through Vx from memory starting at location I.
         The interpreter reads values from memory starting at location I into registers V0 through Vx.
         """
+        if self.I + x >= self.MEM_SIZE:
+            raise RuntimeError(f"Memory overflow: trying to read through address {self.I + x:03X}, "
+                f"but MEM_SIZE is {self.MEM_SIZE:03X}")
         for i in range(x+1):
             self.regs[i] = self.mem[self.I + i]
-        self.I = (self.I + x + 1) & 0xFFF
+        if self.quirk_load_store:
+            self.I = (self.I + x + 1) & 0xFFFF
 
 
 if __name__ == "__main__":

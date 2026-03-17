@@ -3,21 +3,12 @@
 # By Phil Boivin - 2025
 # Version 0.1.1
 # -----------------------------------------------
-import importlib.util
-import os
 import pytest
-
-# Dynamically load the chip8 module from chip_8.py
-spec = importlib.util.spec_from_file_location(
-    "chip8",
-    os.path.join(os.path.dirname(__file__), "chip_8.py")
-)
-chip8 = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(chip8)
+from src.chip_8 import Chip8, NeedKey
 
 @pytest.fixture
 def chip():
-    return chip8.Chip8()
+    return Chip8()
 
 def test_disp_clear_clears_screen(chip):
     chip.screen[:] = bytearray([1] * len(chip.screen))
@@ -165,38 +156,54 @@ def test_sub_vx_vy_with_borrow(chip):
     assert chip.regs[0xF] == 0
 
 def test_sub_vx_vy_equal(chip):
-    # When Vx == Vy, VF should be 0 and Vx becomes 0.
+    # When Vx == Vy, VF should be 1 (NOT borrow: Vx >= Vy) and Vx becomes 0.
     chip.regs[0x6] = 0xAB
     chip.regs[0x7] = 0xAB
-    chip.regs[0xF] = 1
+    chip.regs[0xF] = 0
     chip.op_sub_vx_vy(0x6, 0x7)
     assert chip.regs[0x6] == 0x00
-    assert chip.regs[0xF] == 0
+    assert chip.regs[0xF] == 1
 
 
 def test_shr_vx_with_lsb_one(chip):
-    # When Vx is odd, VF should be set to 1 and Vx should shift right by 1
+    # Default quirk_shifting=False: shifts Vy's value into Vx
     chip.regs[0x2] = 0x05  # binary 00000101, LSB = 1
     chip.regs[0xF] = 0      # clear flag
-    chip.op_shr_vx(0x2)
+    chip.op_shr_vx(0x2, 0x2)  # vx=vy=same register
     assert chip.regs[0xF] == 1
     assert chip.regs[0x2] == 0x02  # 5 >> 1 = 2
 
 def test_shr_vx_with_lsb_zero(chip):
-    # When Vx is even, VF should be set to 0 and Vx should shift right by 1
     chip.regs[0x3] = 0x08  # binary 00001000, LSB = 0
     chip.regs[0xF] = 1      # set flag to non-zero
-    chip.op_shr_vx(0x3)
+    chip.op_shr_vx(0x3, 0x3)
     assert chip.regs[0xF] == 0
     assert chip.regs[0x3] == 0x04  # 8 >> 1 = 4
 
 def test_shr_vx_zero_result(chip):
-    # Shifting a 1 results in zero and VF should capture the 1 bits
     chip.regs[0x4] = 0x01  # binary 00000001, LSB = 1
     chip.regs[0xF] = 0
-    chip.op_shr_vx(0x4)
+    chip.op_shr_vx(0x4, 0x4)
     assert chip.regs[0xF] == 1
     assert chip.regs[0x4] == 0x00  # 1 >> 1 = 0
+
+def test_shr_uses_vy_when_quirk_off(chip):
+    # quirk_shifting=False (default): Vx gets Vy >> 1
+    chip.quirk_shifting = False
+    chip.regs[0x2] = 0x00
+    chip.regs[0x3] = 0x0A  # Vy = 10, LSB = 0
+    chip.op_shr_vx(0x2, 0x3)
+    assert chip.regs[0x2] == 0x05  # 10 >> 1 = 5
+    assert chip.regs[0xF] == 0
+
+def test_shr_uses_vx_when_quirk_on(chip):
+    # quirk_shifting=True: Vx gets Vx >> 1 (Vy ignored)
+    chip.quirk_shifting = True
+    chip.regs[0x2] = 0x07  # Vx = 7, LSB = 1
+    chip.regs[0x3] = 0xFF  # Vy = 0xFF (should be ignored)
+    chip.op_shr_vx(0x2, 0x3)
+    assert chip.regs[0x2] == 0x03  # 7 >> 1 = 3
+    assert chip.regs[0xF] == 1
 
 # SUBN Vx, Vy tests
 def test_subn_vx_vy_no_borrow(chip):
@@ -227,31 +234,33 @@ def test_subn_vx_vy_equal(chip):
     assert chip.regs[0xF] == 1
 
 def test_shl_vx_msb_one(chip):
-    # When Vx’s MSB is 1, VF should be set to 1 and Vx should shift left (with wrap).
     chip.regs[0x8] = 0x80  # binary 10000000, MSB = 1
     chip.regs[0xF] = 0      # clear flag
-    chip.op_shl_vx(0x8)
+    chip.op_shl_vx(0x8, 0x8)
     assert chip.regs[0xF] == 1
-    # 0x80 << 1 = 0x100, masked to 8 bits gives 0x00
     assert chip.regs[0x8] == 0x00
 
 def test_shl_vx_msb_zero(chip):
-    # When Vx’s MSB is 0, VF should be set to 0 and Vx should shift left.
     chip.regs[0x9] = 0x40  # binary 01000000, MSB = 0
     chip.regs[0xF] = 1      # set flag to non-zero
-    chip.op_shl_vx(0x9)
+    chip.op_shl_vx(0x9, 0x9)
     assert chip.regs[0xF] == 0
-    # 0x40 << 1 = 0x80
     assert chip.regs[0x9] == 0x80
 
 def test_shl_vx_wraps(chip):
-    # Shifting 0xFF (11111111) left yields 0xFE after wrap, VF captures the old MSB.
     chip.regs[0xA] = 0xFF  # MSB = 1
     chip.regs[0xF] = 0
-    chip.op_shl_vx(0xA)
+    chip.op_shl_vx(0xA, 0xA)
     assert chip.regs[0xF] == 1
-    # 0xFF << 1 = 0x1FE masked to 0xFF gives 0xFE
     assert chip.regs[0xA] == 0xFE
+
+def test_shl_uses_vy_when_quirk_off(chip):
+    chip.quirk_shifting = False
+    chip.regs[0x2] = 0x00
+    chip.regs[0x3] = 0x40  # Vy MSB = 0
+    chip.op_shl_vx(0x2, 0x3)
+    assert chip.regs[0x2] == 0x80
+    assert chip.regs[0xF] == 0
 
 def test_sne_vx_vy_skips_when_not_equal(chip):
     # When Vx != Vy, PC should advance by 2 (skip next instruction)
@@ -330,14 +339,21 @@ def test_ld_vx_dt_sets_from_delay_timer(chip):
     chip.op_ld_vx_dt(0x5)
     assert chip.regs[0x5] == 0x3C
 
-def test_ld_vx_k_waits_for_key(chip, monkeypatch):
-    # FX0A: Vx should receive the index of the first pressed key
-    # Prevent actual sleeping to speed up the test
-    monkeypatch.setattr(chip.time, 'sleep', lambda x: None)
-    chip.keypad[7] = True
+def test_ld_vx_k_detects_new_press(chip):
+    # FX0A: Vx should receive the index of a newly pressed key (transition)
+    chip._prev_keypad = [False] * 16  # no keys were pressed last frame
+    chip.keypad[7] = True             # key 7 is now pressed
     chip.regs[0x2] = 0x00
     chip.op_ld_vx_k(0x2)
     assert chip.regs[0x2] == 7
+
+def test_ld_vx_k_ignores_held_key(chip):
+    # FX0A: should raise NeedKey if key was already held (no transition)
+    chip._prev_keypad = [False] * 16
+    chip._prev_keypad[7] = True       # key 7 was already pressed last frame
+    chip.keypad[7] = True             # still pressed
+    with pytest.raises(NeedKey):
+        chip.op_ld_vx_k(0x2)
 
 def test_ld_dt_vx_sets_delay_timer(chip):
     # FX15: delay timer should be set to the value in Vx
@@ -360,12 +376,19 @@ def test_add_i_vx_basic(chip):
     chip.op_add_i_vx(0x2)
     assert chip.I == 0x120
 
-def test_add_i_vx_wraps_12bit(chip):
-    # FX1E: I should wrap around modulo 0x1000 when I + Vx == 0x1000
+def test_add_i_vx_no_wrap_at_12bit(chip):
+    # FX1E: I is 16-bit, so 0xFFF + 1 = 0x1000 (no wrap at 12 bits)
     chip.I = 0xFFF
     chip.regs[0x3] = 0x1
     chip.op_add_i_vx(0x3)
-    assert chip.I == (0xFFF + 0x1) & 0xFFF  # 0x1000 wraps to 0x000
+    assert chip.I == 0x1000
+
+def test_add_i_vx_wraps_16bit(chip):
+    # FX1E: I wraps at 16-bit boundary
+    chip.I = 0xFFFF
+    chip.regs[0x3] = 0x1
+    chip.op_add_i_vx(0x3)
+    assert chip.I == 0x0000
 
 def test_ld_f_vx_zero(chip):
     # FX29: I should point to FONT_START when Vx is 0
@@ -423,3 +446,70 @@ def test_ld_vx_i_loads_memory_into_registers(chip):
     assert chip.regs[0x0] == 9
     assert chip.regs[0x1] == 8
     assert chip.regs[0x2] == 7
+
+def test_ld_vx_i_overflow_raises(chip):
+    # Fx65: reading past MEM_SIZE should raise
+    chip.I = chip.MEM_SIZE - 2
+    with pytest.raises(RuntimeError):
+        chip.op_ld_vx_i(chip.MEM_SIZE)
+
+def test_ld_i_vx_no_i_increment_when_quirk_off(chip):
+    # Fx55: when quirk_load_store=False, I should NOT change after store
+    chip.quirk_load_store = False
+    chip.I = 0x400
+    chip.regs[0x0], chip.regs[0x1] = 1, 2
+    chip.op_ld_i_vx(1)
+    assert chip.mem[0x400] == 1
+    assert chip.mem[0x401] == 2
+    assert chip.I == 0x400  # unchanged
+
+def test_ld_vx_i_no_i_increment_when_quirk_off(chip):
+    # Fx65: when quirk_load_store=False, I should NOT change after load
+    chip.quirk_load_store = False
+    chip.I = 0x500
+    chip.mem[0x500] = 9
+    chip.mem[0x501] = 8
+    chip.op_ld_vx_i(1)
+    assert chip.regs[0x0] == 9
+    assert chip.regs[0x1] == 8
+    assert chip.I == 0x500  # unchanged
+
+def test_reset_clears_state(chip):
+    # Modify all state, then reset and verify clean
+    chip.regs[0x5] = 0xFF
+    chip.sp = 5
+    chip.dt = 30
+    chip.st = 20
+    chip.I = 0x999
+    chip.screen[0] = 1
+    chip.keypad[3] = True
+    chip.reset()
+    assert chip.pc == 0x200
+    assert chip.sp == 0
+    assert chip.dt == 0
+    assert chip.st == 0
+    assert chip.I == 0
+    assert all(r == 0 for r in chip.regs)
+    assert all(p == 0 for p in chip.screen)
+    assert all(k is False for k in chip.keypad)
+
+def test_skp_vx_masks_key_to_4_bits(chip):
+    # Ex9E: key index should be masked to 0-F even if Vx > 0xF
+    chip.regs[0x2] = 0x13  # 0x13 & 0xF = 3
+    chip.pc = 0x200
+    chip.keypad[3] = True
+    chip.op_skp_vx(0x2)
+    assert chip.pc == 0x202
+
+def test_ld_f_vx_masks_digit(chip):
+    # Fx29: digit should be masked to 0-F even if Vx > 0xF
+    chip.regs[0x2] = 0x1A  # 0x1A & 0xF = 0xA
+    chip.op_ld_f_vx(0x2)
+    assert chip.I == chip.FONT_START + (0xA * 5)
+
+def test_ld_b_vx_overflow_raises(chip):
+    # Fx33: writing BCD past MEM_SIZE should raise
+    chip.I = chip.MEM_SIZE - 1
+    chip.regs[0x0] = 123
+    with pytest.raises(RuntimeError):
+        chip.op_ld_b_vx(0x0)

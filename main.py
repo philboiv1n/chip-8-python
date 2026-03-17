@@ -18,9 +18,13 @@ TARGET_FRAME_TIME = 1.0 / FRAME_RATE
 KEY_UP = 0
 KEY_DOWN = 1
 
-# --- Global State ---
+# --- Shared State ---
+# The emulator instance and speed are shared across the HTTP /load endpoint
+# and the WebSocket connection. Only one active session is supported at a time.
 chip = chip_8.Chip8()
 current_ticks_per_sec = DEFAULT_TICKS_PER_SEC
+active_ws_lock = asyncio.Lock()
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -60,6 +64,17 @@ async def load_rom(file: UploadFile = File(...)):
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     """WebSocket endpoint for emulator control, key events, and display/sound updates."""
+    if active_ws_lock.locked():
+        await ws.accept()
+        await ws.close(code=1008, reason="Another session is already active.")
+        print("Rejected WebSocket connection: another session is active.")
+        return
+    async with active_ws_lock:
+        await _handle_websocket(ws)
+
+
+async def _handle_websocket(ws: WebSocket):
+    """Inner WebSocket handler, runs while holding the active_ws_lock."""
     await ws.accept()
     print("WebSocket connection accepted.")
     # Queue for specific key events needed by Fx0A opcode
@@ -143,6 +158,7 @@ async def emulator_runner(ws: WebSocket, key_event_queue: asyncio.Queue):
     """
     last_frame_update_time = time.perf_counter()
     accumulated_cpu_time_debt = 0.0 # Tracks how much CPU time we owe
+    accumulated_timer_debt = 0.0    # Tracks how much 60Hz timer time we owe
     paused_for_key_vx_idx = -1 # Register index waiting for key (-1 means not waiting)
     last_known_sound_state = False # Track sound state to send updates only on change
 
@@ -232,8 +248,13 @@ async def emulator_runner(ws: WebSocket, key_event_queue: asyncio.Queue):
             # --- 60Hz Updates (Timers, Sound, Display) ---
             # These happen regardless of CPU cycles executed, tied to real time for FRAME_RATE
 
-            # Update Chip-8 timers (DT and ST)
-            chip.update_timers()
+            # Update Chip-8 timers (DT and ST) — accumulate real time for accurate 60Hz
+            accumulated_timer_debt += delta_time
+            timer_ticks = int(accumulated_timer_debt * FRAME_RATE)
+            if timer_ticks > 0:
+                accumulated_timer_debt -= timer_ticks / FRAME_RATE
+                for _ in range(timer_ticks):
+                    chip.update_timers()
 
             # Check sound state and notify client IF it changed
             current_sound_state = chip.is_sound_on
@@ -245,6 +266,9 @@ async def emulator_runner(ws: WebSocket, key_event_queue: asyncio.Queue):
                 except WebSocketDisconnect:
                      print("WebSocket disconnected during sound update.")
                      break # Exit the main while loop
+
+            # Snapshot keypad for Fx0A press-transition detection
+            chip.sync_prev_keypad()
 
             # Send the current framebuffer state
             try:
