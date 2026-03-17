@@ -39,7 +39,6 @@ async def load_rom(file: UploadFile = File(...)):
     """
     Upload a .ch8 ROM, reset the emulator, and load the ROM.
     """
-    global chip
     data = await file.read()
     max_size = chip.MEM_SIZE - 0x200 # Max ROM size
 
@@ -50,13 +49,10 @@ async def load_rom(file: UploadFile = File(...)):
 
     print(f"Received ROM: {file.filename}, Size: {len(data)} bytes")
 
-    # --- Reset emulator state ---
-    chip = chip_8.Chip8() # Create a fresh instance
-    print("Chip-8 state reset.")
-
-    # Load ROM into memory starting at 0x200
+    # --- Reset emulator state and load ROM ---
+    chip.reset()
     chip.mem[0x200 : 0x200 + len(data)] = data
-    print(f"ROM loaded into memory at 0x200 - 0x{0x200 + len(data) - 1:X}")
+    print(f"Chip-8 state reset. ROM loaded into memory at 0x200 - 0x{0x200 + len(data) - 1:X}")
 
     return {"status": "loaded", "size": len(data), "filename": file.filename}
 

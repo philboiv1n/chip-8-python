@@ -5,7 +5,6 @@
 # -----------------------------------------------
 import logging
 import random
-import time
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,6 @@ class Chip8:
         ])
         self.mem[self.FONT_START : self.FONT_START + len(font_data)] = font_data
         self.random = random
-        self.time = time
 
 
         # --- QUIRK FLAGS ---
@@ -96,6 +94,8 @@ class Chip8:
     3. Return the opcode for decoding.
     """
     def fetch(self) -> int:
+        if self.pc + 1 >= self.MEM_SIZE:
+            raise RuntimeError(f"PC out of bounds: {self.pc:#05X} (need 2 bytes but MEM_SIZE={self.MEM_SIZE:#05X})")
         high = self.mem[self.pc]
         low  = self.mem[self.pc + 1]
         opcode = (high << 8) | low
@@ -439,7 +439,7 @@ class Chip8:
     def op_sub_vx_vy(self, vx_idx, vy_idx):
         """
         8xy5 - SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow.
-        If Vx > Vy, then VF is set to 1, otherwise 0 (tests expect VF=0 on equal).
+        If Vx >= Vy, then VF is set to 1, otherwise 0.
         Then Vy is subtracted from Vx, and the result stored in Vx.
         """
         vx_val = self.regs[vx_idx]

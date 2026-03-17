@@ -88,17 +88,23 @@ def test_ld_vx_vy_copies_register(chip):
 def test_or_and_xor_and_vx_vy_logical_ops(chip):
     chip.regs[0x8] = 0x0F
     chip.regs[0x9] = 0xF0
-    # OR
+    # OR — should also reset VF
+    chip.regs[0xF] = 1  # pre-set VF to verify it gets cleared
     chip.op_or_vx_vy(0x8, 0x9)
     assert chip.regs[0x8] == (0x0F | 0xF0)
-    # AND
+    assert chip.regs[0xF] == 0  # VF reset quirk
+    # AND — should also reset VF
     chip.regs[0x8] = 0x0F
+    chip.regs[0xF] = 1
     chip.op_and_vx_vy(0x8, 0x9)
     assert chip.regs[0x8] == (0x0F & 0xF0)
-    # XOR
+    assert chip.regs[0xF] == 0  # VF reset quirk
+    # XOR — should also reset VF
     chip.regs[0x8] = 0x0F
+    chip.regs[0xF] = 1
     chip.op_xor_vx_vy(0x8, 0x9)
     assert chip.regs[0x8] == (0x0F ^ 0xF0)
+    assert chip.regs[0xF] == 0  # VF reset quirk
 
 def test_add_vx_vy_sets_carry_flag(chip):
     chip.regs[0xA] = 0xFF
@@ -132,8 +138,9 @@ def test_drw_vx_vy_n_draw_and_collision(chip):
     # some pixels should be set
     assert chip.screen[0] == 1
     assert chip.screen[1] == 1
-    # Second draw at same position: pixels should toggle off
+    # Second draw at same position: collision detected, pixels toggle off
     chip.op_drw_vx_vy_n(0x0, 0x1, 2)
+    assert chip.regs[0xF] == 1  # collision: pixels were ON before XOR
     assert chip.screen[0] == 0
     assert chip.screen[1] == 0
 
